@@ -1,0 +1,70 @@
+# my global config
+global:
+  scrape_interval: 15s # By default, scrape targets every 15 seconds.
+  evaluation_interval: 15s # By default, scrape targets every 15 seconds.
+  # scrape_timeout is set to the global default (10s).
+
+  # Attach these labels to any time series or alerts when communicating with
+  # external systems (federation, remote storage, Alertmanager).
+  external_labels:
+    monitor: "my-project"
+
+# Load and evaluate rules in this file every 'evaluation_interval' seconds.
+rule_files:
+  - "alert.rules"
+  # - "first.rules"
+  # - "second.rules"
+
+# alert
+alerting:
+  alertmanagers:
+    - scheme: http
+      static_configs:
+        - targets:
+            - "alertmanager:9093"
+
+scrape_configs:
+  - job_name: "prometheus"
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: "cadvisor"
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  - job_name: "node-exporter"
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: "tendermint"
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - 192.168.0.10:26660
+          - 192.168.0.11:26660
+          - 192.168.0.12:26660
+          - 192.168.0.13:26660
+        labels:
+          group: "validator"
+          role: "validator"
+
+  # all validators
+  - job_name: "validator"
+    scrape_interval: 15s
+    metrics_path: /metrics/validators
+    static_configs:
+      - targets:
+          - ethmvaloper1u5fxxyknpaw5pzrjtszzcnxrz534ytrm0jrcuy
+          - ethmvaloper1s6qde6jl5fg9hcj4ng2h9yh0q9w8574t0tddmp
+          - ethmvaloper1agdn3weu6rsq5f9p226qyvqwhsqarszv8l9ylp
+          - ethmvaloper1rahupaw0dq6gfqxjfg5xmm6d55gx4se9qvj8js
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_address
+      - source_labels: [__param_address]
+        target_label: instance
+      - target_label: __address__
+        replacement: cosmos-exporter:9300
