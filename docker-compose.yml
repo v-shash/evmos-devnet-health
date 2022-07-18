@@ -1,0 +1,197 @@
+version: "3"
+
+networks:
+  localnet:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.0.0/24
+  front-tier:
+  back-tier:
+        
+volumes:
+    prometheus_data: {}
+    grafana_data: {}
+  
+
+services:
+  ethermintdnode0:
+    container_name: ethermintdnode0
+    image: "ethermintd/node"
+    ports:
+      - "26657:26657"
+      - "8545:8545"
+      - "8546:8546"
+      - "8125:8125"
+      - "9091:9090"
+    environment:
+      - ID=0
+      - LOG=${LOG:-ethermintd.log}
+    volumes:
+      - ./localnet-setup/node0/evmosd:/ethermint:Z
+    networks:
+      localnet:
+        ipv4_address: 192.168.0.10
+    entrypoint: "bash start-docker.sh"
+
+  ethermintdnode1:
+    container_name: ethermintdnode1
+    image: "ethermintd/node"
+    ports:
+      - "26658:26657"
+      - "8555:8545"
+      - "8556:8546"
+      - "8126:8125"
+    environment:
+      - ID=1
+      - LOG=${LOG:-ethermintd.log}
+    volumes:
+      - ./localnet-setup/node1/evmosd:/ethermint:Z
+    networks:
+      localnet:
+        ipv4_address: 192.168.0.11
+    entrypoint: "bash start-docker.sh"
+
+  ethermintdnode2:
+    container_name: ethermintdnode2
+    image: "ethermintd/node"
+    environment:
+      - ID=2
+      - LOG=${LOG:-ethermintd.log}
+    ports:
+      - "26659:26657"
+      - "8565:8545"
+      - "8566:8546"
+      - "8127:8125"
+    volumes:
+      - ./localnet-setup/node2/evmosd:/ethermint:Z
+    networks:
+      localnet:
+        ipv4_address: 192.168.0.12
+    entrypoint: "bash start-docker.sh"
+
+  ethermintdnode3:
+    container_name: ethermintdnode3
+    image: "ethermintd/node"
+    environment:
+      - ID=3
+      - LOG=${LOG:-ethermintd.log}
+    ports:
+      - "26660:26657"
+      - "8575:8545"
+      - "8576:8546"
+      - "8128:8125"
+    volumes:
+      - ./localnet-setup/node3/evmosd:/ethermint:Z
+    networks:
+      localnet:
+        ipv4_address: 192.168.0.13
+    entrypoint: "bash start-docker.sh"
+    
+  prometheus:
+    image: prom/prometheus:v2.36.2
+    volumes:
+      - ./prometheus/:/etc/prometheus/
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - 9090:9090
+    links:
+      - cadvisor:cadvisor
+    depends_on:
+      - cadvisor
+    networks:
+      - back-tier
+      - localnet
+    restart: always
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports:
+      - 8080:8080
+    networks:
+      - back-tier
+    restart: always
+    deploy:
+      mode: global
+
+  grafana:
+    image: grafana/grafana
+    user: "472"
+    depends_on:
+      - prometheus
+    ports:
+      - 3000:3000
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+    env_file:
+      - ./grafana/config.monitoring
+    networks:
+      - back-tier
+      - front-tier
+    restart: always
+    
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:latest
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      - /:/host:ro,rslave
+    command: 
+      - '--path.rootfs=/host'
+      - '--path.procfs=/host/proc' 
+      - '--path.sysfs=/host/sys'
+      - --collector.filesystem.ignored-mount-points
+      - "^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)"
+    ports:
+      - 9100:9100
+    networks:
+      - back-tier
+    restart: always
+    deploy:
+      mode: global
+      
+  alertmanager:
+    image: prom/alertmanager
+    ports:
+      - 9093:9093
+    volumes:
+      - ./alertmanager/:/etc/alertmanager/
+    networks:
+      - back-tier
+    restart: always
+    command:
+      - '--config.file=/etc/alertmanager/config.yml'
+      - '--storage.path=/alertmanager'
+
+  cosmos-exporter:
+    image: cosmos-exporter
+    container_name: cosmos-exporter
+    build:
+      context: exporter
+    networks:
+      - localnet
+      - back-tier
+    environment:
+      - BECH_PREFIX=ethm
+      - TENDERMINT_URL=http://192.168.0.10:26657
+      - GRPC_URL=192.168.0.10:9090
+      - DENOM_COEFFICIENT=18
+      - DENOM=aphoton
+    ports:
+      - 9300:9300
+    restart: always
+    
+
